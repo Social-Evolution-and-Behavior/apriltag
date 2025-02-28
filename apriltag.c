@@ -393,6 +393,10 @@ void apriltag_detector_destroy(apriltag_detector_t *td)
     apriltag_detector_clear_families(td);
 
     zarray_destroy(td->tag_families);
+    if (td->raw_quads != NULL) {
+        zarray_destroy(td->raw_quads);
+        td->raw_quads = NULL;
+    }
     free(td);
 }
 
@@ -967,6 +971,9 @@ static void quad_decode_task(void *_u)
                     det->p[i][1] = p[1];
                 }
 
+                // NEW: Record the candidate quad index.
+                det->raw_quad_index = quadidx;
+                
                 pthread_mutex_lock(&td->mutex);
                 zarray_add(task->detections, &det);
                 pthread_mutex_unlock(&td->mutex);
@@ -1019,6 +1026,8 @@ zarray_t *apriltag_detector_detect(apriltag_detector_t *td, image_u8_t *im_orig)
 
     timeprofile_clear(td->tp);
     timeprofile_stamp(td->tp, "init");
+
+    debug_print("detecting\n");
 
     ///////////////////////////////////////////////////////////
     // Step 1. Detect quads according to requested image decimation
@@ -1078,6 +1087,10 @@ zarray_t *apriltag_detector_detect(apriltag_detector_t *td, image_u8_t *im_orig)
     timeprofile_stamp(td->tp, "blur/sharp");
 
     if (td->debug)
+        debug_print("debug is on");
+
+
+    if (td->debug)
         image_u8_write_pnm(quad_im, "debug_preprocess.pnm");
 
     zarray_t *quads = apriltag_quad_thresh(td, quad_im);
@@ -1107,6 +1120,22 @@ zarray_t *apriltag_detector_detect(apriltag_detector_t *td, image_u8_t *im_orig)
     zarray_t *detections = zarray_create(sizeof(apriltag_detection_t*));
 
     td->nquads = zarray_size(quads);
+
+    // If td->raw_quads was already set, free it first.
+    if (td->raw_quads != NULL) {
+        zarray_destroy(td->raw_quads);
+        td->raw_quads = NULL;
+    }
+    
+    // Create a copy of the candidate quads and store it in td->raw_quads.
+    td->raw_quads = zarray_create(sizeof(struct quad*));
+    for (int i = 0; i < zarray_size(quads); i++) {
+        struct quad *q_orig;
+        zarray_get_volatile(quads, i, &q_orig);
+        // Create a deep copy of the quad using your existing function.
+        struct quad *q_copy = quad_copy(q_orig);
+        zarray_add(td->raw_quads, &q_copy);
+    }
 
     timeprofile_stamp(td->tp, "quads");
 

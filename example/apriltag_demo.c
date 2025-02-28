@@ -43,6 +43,7 @@ either expressed or implied, of the Regents of The University of Michigan.
 
 #include "apriltag.h"
 #include "tag36h11.h"
+#include "tag36ARTag.h"
 #include "tag25h9.h"
 #include "tag16h5.h"
 #include "tagCircle21h7.h"
@@ -65,12 +66,13 @@ int main(int argc, char *argv[])
     getopt_add_bool(getopt, 'h', "help", 0, "Show this help");
     getopt_add_bool(getopt, 'd', "debug", 0, "Enable debugging output (slow)");
     getopt_add_bool(getopt, 'q', "quiet", 0, "Reduce output");
-    getopt_add_string(getopt, 'f', "family", "tag36h11", "Tag family to use");
+    getopt_add_string(getopt, 'f', "family", "tag36ARTag", "Tag family to use");
     getopt_add_int(getopt, 'i', "iters", "1", "Repeat processing on input set this many times");
     getopt_add_int(getopt, 't', "threads", "1", "Use this many CPU threads");
     getopt_add_int(getopt, 'a', "hamming", "1", "Detect tags with up to this many bit errors.");
     getopt_add_double(getopt, 'x', "decimate", "2.0", "Decimate input image by this factor");
     getopt_add_double(getopt, 'b', "blur", "0.0", "Apply low-pass blur to input; negative sharpens");
+    getopt_add_double(getopt, 's', "decode_sharpening", "0.25", "Sharpening of the image before decoding");
     getopt_add_bool(getopt, '0', "refine-edges", 1, "Spend more time trying to align edges of tags");
 
     if (!getopt_parse(getopt, argc, argv, 1) || getopt_get_bool(getopt, "help")) {
@@ -85,6 +87,8 @@ int main(int argc, char *argv[])
     const char *famname = getopt_get_string(getopt, "family");
     if (!strcmp(famname, "tag36h11")) {
         tf = tag36h11_create();
+    } else if (!strcmp(famname, "tag36ARTag")) {
+        tf = tag36ARTag_create();
     } else if (!strcmp(famname, "tag25h9")) {
         tf = tag25h9_create();
     } else if (!strcmp(famname, "tag16h5")) {
@@ -118,9 +122,11 @@ int main(int argc, char *argv[])
 
     td->quad_decimate = getopt_get_double(getopt, "decimate");
     td->quad_sigma = getopt_get_double(getopt, "blur");
+    td->decode_sharpening = getopt_get_double(getopt, "decode_sharpening");
     td->nthreads = getopt_get_int(getopt, "threads");
     td->debug = getopt_get_bool(getopt, "debug");
     td->refine_edges = getopt_get_bool(getopt, "refine-edges");
+    td->qtp.deglitch = 1;
 
     int quiet = getopt_get_bool(getopt, "quiet");
 
@@ -208,14 +214,29 @@ int main(int argc, char *argv[])
                 exit(-1);
             }
 
+            // print the raw quad detections
+            printf("quads %d\n", zarray_size(td->raw_quads));
+            for (int i = 0; i < zarray_size(td->raw_quads); i++) {
+                struct quad *q;
+                zarray_get(td->raw_quads, i, &q);
+                printf("quad %d: [%.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f]\n", 
+                        i,
+                        q->p[0][0], q->p[0][1],
+                        q->p[1][0], q->p[1][1],
+                        q->p[2][0], q->p[2][1],
+                        q->p[3][0], q->p[3][1]);
+            }
+
+                
             for (int i = 0; i < zarray_size(detections); i++) {
                 apriltag_detection_t *det;
                 zarray_get(detections, i, &det);
 
                 if (!quiet)
-                    printf("detection %3d: id (%2dx%2d)-%-4d, hamming %d, margin %8.3f\n",
-                           i, det->family->nbits, det->family->h, det->id, det->hamming, det->decision_margin);
-
+                    printf("detection %3d: id (%2dx%2d)-%-4d, hamming %d, margin %8.3f, index %d\n",
+                           i, det->family->nbits, det->family->h, det->id, det->hamming, det->decision_margin, det->raw_quad_index);
+                //print coordinates of the tag
+                printf("center: (%.2f, %.2f)\n", det->p[0][0], det->p[0][1]);
                 hamm_hist[det->hamming]++;
                 total_hamm_hist[det->hamming]++;
             }
@@ -238,6 +259,7 @@ int main(int argc, char *argv[])
             total_time += t;
             printf("%12.3f ", t);
             printf("%5d", td->nquads);
+
 
             printf("\n");
 
@@ -262,6 +284,8 @@ int main(int argc, char *argv[])
 
     if (!strcmp(famname, "tag36h11")) {
         tag36h11_destroy(tf);
+    } else if (!strcmp(famname, "tag36ARTag")) {
+        tag36ARTag_destroy(tf);
     } else if (!strcmp(famname, "tag25h9")) {
         tag25h9_destroy(tf);
     } else if (!strcmp(famname, "tag16h5")) {

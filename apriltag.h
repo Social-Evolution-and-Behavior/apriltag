@@ -183,6 +183,9 @@ struct apriltag_detector
     // tag family passed into the constructor.
     zarray_t *tag_families;
 
+    // New field to store candidate quads:
+    zarray_t *raw_quads;
+
     // Used to manage multi-threading.
     workerpool_t *wp;
 
@@ -228,6 +231,9 @@ struct apriltag_detection
     // The corners of the tag in image pixel coordinates. These always
     // wrap counter-clock wise around the tag.
     double p[4][2];
+
+    // NEW FIELD: index of the candidate quad that produced this detection
+    int raw_quad_index;
 };
 
 // don't forget to add a family!

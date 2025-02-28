@@ -91,11 +91,8 @@ apriltag_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
     int         maxhamming      = 1;
     float       decimate        = 2.0;
     float       blur            = 0.0;
-    float       decode_sharpening = 0.25;
     bool        refine_edges    = true;
-    bool        qtp_deglitch    = false;
     bool        debug           = false;
-    PyObject*   py_qtp_deglitch = NULL;
     PyObject*   py_refine_edges = NULL;
     PyObject*   py_debug        = NULL;
 
@@ -104,29 +101,23 @@ apriltag_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
                         "maxhamming",
                         "decimate",
                         "blur",
-                        "decode_sharpening",
                         "refine_edges",
-                        "qtp_deglitch",
                         "debug",
                         NULL };
 
-    if(!PyArg_ParseTupleAndKeywords( args, kwargs, "s|iifffOOO",
+    if(!PyArg_ParseTupleAndKeywords( args, kwargs, "s|iiffOO",
                                      keywords,
                                      &family,
                                      &Nthreads,
                                      &maxhamming,
                                      &decimate,
                                      &blur,
-                                     &decode_sharpening,
-                                     &py_qtp_deglitch,
                                      &py_refine_edges,
                                      &py_debug ))
     {
         goto done;
     }
 
-    if(py_qtp_deglitch != NULL)
-        qtp_deglitch = PyObject_IsTrue(py_qtp_deglitch);
     if(py_refine_edges != NULL)
         refine_edges = PyObject_IsTrue(py_refine_edges);
     if(py_debug        != NULL)
@@ -155,8 +146,6 @@ apriltag_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
     self->td->quad_sigma          = blur;
     self->td->nthreads            = Nthreads;
     self->td->refine_edges        = refine_edges;
-    self->td->decode_sharpening   = decode_sharpening;
-    self->td->qtp.deglitch        = qtp_deglitch;
     self->td->debug               = debug;
 
     switch(errno){
@@ -298,13 +287,12 @@ static PyObject* apriltag_detect(apriltag_py_t* self,
         }
 
         PyTuple_SET_ITEM(detections_tuple, i,
-                         Py_BuildValue("{s:i,s:f,s:i,s:N,s:N,s:i}",
+                         Py_BuildValue("{s:i,s:f,s:i,s:N,s:N}",
                                        "hamming", det->hamming,
                                        "margin",  det->decision_margin,
                                        "id",      det->id,
                                        "center",  xy_c,
-                                       "lb-rb-rt-lt", xy_lb_rb_rt_lt,
-                                       "raw_quad_index", det->raw_quad_index));
+                                       "lb-rb-rt-lt", xy_lb_rb_rt_lt));
         xy_c           = NULL;
         xy_lb_rb_rt_lt = NULL;
     }
@@ -326,57 +314,11 @@ static PyObject* apriltag_detect(apriltag_py_t* self,
 }
 
 
-static PyObject* apriltag_raw_quads(apriltag_py_t* self, PyObject* args)
-{
-    (void)args;  // Mark args as unused
-
-    // Make sure that the detector has stored the raw quads.
-    if (self->td->raw_quads == NULL) {
-        PyErr_SetString(PyExc_RuntimeError, "Raw quads are not available. Run detection first.");
-        return NULL;
-    }
-
-    int n = zarray_size(self->td->raw_quads);
-    PyObject* list = PyList_New(n);
-    if (!list) {
-        return NULL;
-    }
-
-    // For each quad, create a NumPy array of shape (4,2) (type double)
-    for (int i = 0; i < n; i++) {
-        struct quad* q;
-        // Call zarray_get() (which returns void) and then check if q is valid.
-        zarray_get(self->td->raw_quads, i, &q);
-        if (q == NULL) {
-            Py_DECREF(list);
-            return NULL;
-        }
-        npy_intp dims[2] = {4, 2};
-        PyObject* np_arr = PyArray_SimpleNew(2, dims, NPY_FLOAT64);
-        if (!np_arr) {
-            Py_DECREF(list);
-            return NULL;
-        }
-        double* data = (double*)PyArray_DATA((PyArrayObject*)np_arr);
-        for (int j = 0; j < 4; j++) {
-            data[j*2 + 0] = q->p[j][0];
-            data[j*2 + 1] = q->p[j][1];
-        }
-        // PyList_SET_ITEM steals the reference to np_arr.
-        PyList_SET_ITEM(list, i, np_arr);
-    }
-    return list;
-}
-
-
-
 #include "apriltag_detect_docstring.h"
 #include "apriltag_py_type_docstring.h"
 
 static PyMethodDef apriltag_methods[] =
     { PYMETHODDEF_ENTRY(apriltag_, detect, METH_VARARGS),
-    {"raw_quads", (PyCFunction)apriltag_raw_quads, METH_NOARGS,
-        "Return a list of raw quad coordinates (each as a (4,2) NumPy array)"},
       {NULL, NULL, 0, NULL}
     };
 
