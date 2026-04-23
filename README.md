@@ -8,6 +8,12 @@ Table of Contents
 =================
 - [Papers](#papers)
 - [Install](#install)
+  - [Installing Into A Custom Prefix Or Python Environment](#installing-into-a-custom-prefix-or-python-environment)
+  - [Linux Or macOS: Conda Environment](#linux-or-macos-conda-environment)
+  - [Linux Or macOS: `venv`](#linux-or-macos-venv)
+  - [Windows: Conda Environment](#windows-conda-environment)
+  - [Windows: `venv`](#windows-venv)
+  - [Running The Bundled Sample-Image Tests](#running-the-bundled-sample-image-tests)
 - [Usage](#usage)
   - [Choosing a Tag Family](#choosing-a-tag-family)
   - [Getting Started with the Detector](#getting-started-with-the-detector)
@@ -15,7 +21,7 @@ Table of Contents
     - [C](#c)
     - [Matlab](#matlab)
     - [Julia](#julia)
-  - [Upgrading from AprilTag 2](#upgrading-from-aprilTag-2)
+  - [Upgrading from AprilTag 2](#upgrading-from-apriltag-2)
   - [OpenCV Integration](#opencv-integration)
   - [Tuning the Detector Parameters](#tuning-the-detector-parameters)
     - [Increasing speed.](#increasing-speed)
@@ -40,26 +46,140 @@ Install
 
 Officially only Linux operating systems are supported, although users have had success installing on Windows too.
 
-The default installation will place headers in /usr/local/include and shared library in /usr/local/lib. It also installs a pkg-config script into /usr/local/lib/pkgconfig and will install a python wrapper if python3 is installed.
+The default installation will place headers in /usr/local/include and shared library in /usr/local/lib. It also installs a pkg-config script into /usr/local/lib/pkgconfig and will install a python wrapper if python3, its development headers, and NumPy are available.
 
-```
+```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target install
 ```
 This will build shared (\*.so) libraries by default. If you need static (\*.a) libraries set `BUILD_SHARED_LIBS` to `OFF`:
-```
+
+```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
 cmake --build build --target install
 ```
 
 If you have Ninja (`sudo apt install ninja-build`) installed, you can use:
-```
+
+```bash
 cmake -B build -GNinja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target install
 ```
 to generate and compile via the ninja build script. It will be much faster than with cmake's default Makefile generator.
 
 You can omit `--target install` if you only want to use this locally without installing.
+
+Installing Into A Custom Prefix Or Python Environment
+----------------------------------------------------
+
+If you want the C library and Python wrapper to be installed into a virtual environment, Conda environment, or another non-system prefix, point CMake at that environment explicitly:
+
+```bash
+cmake -S . -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="<environment-prefix>" \
+    -DPython3_EXECUTABLE="<environment-python>" \
+    -DPython3_ROOT_DIR="<environment-prefix>" \
+    -DPython3_FIND_VIRTUALENV=ONLY
+cmake --build build --parallel
+cmake --install build
+```
+
+When `BUILD_PYTHON_WRAPPER=ON`, the module is installed into the selected interpreter's platform-specific `site-packages` directory.
+
+Linux Or macOS: Conda Environment
+--------------------------------
+
+Prerequisites:
+
+- A working compiler toolchain. On macOS install Xcode Command Line Tools with `xcode-select --install`.
+- `cmake` and `numpy` inside the target environment.
+
+Example:
+
+```bash
+conda create -n apriltag-env python=3.13 numpy cmake
+conda activate apriltag-env
+
+cmake -S . -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX" \
+    -DPython3_EXECUTABLE="$CONDA_PREFIX/bin/python" \
+    -DPython3_ROOT_DIR="$CONDA_PREFIX" \
+    -DPython3_FIND_VIRTUALENV=ONLY
+cmake --build build --parallel
+cmake --install build
+```
+
+Linux Or macOS: `venv`
+----------------------
+
+Example:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip numpy cmake
+
+cmake -S . -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="$VIRTUAL_ENV" \
+    -DPython3_EXECUTABLE="$VIRTUAL_ENV/bin/python" \
+    -DPython3_ROOT_DIR="$VIRTUAL_ENV" \
+    -DPython3_FIND_VIRTUALENV=ONLY
+cmake --build build --parallel
+cmake --install build
+```
+
+Windows: Conda Environment
+--------------------------
+
+Windows builds are best-effort rather than officially supported. Use a Developer PowerShell for Visual Studio or a shell with MSVC and CMake on `PATH`.
+
+```powershell
+conda create -n apriltag-env python=3.13 numpy cmake
+conda activate apriltag-env
+
+cmake -S . -B build `
+    -DCMAKE_BUILD_TYPE=Release `
+    -DCMAKE_INSTALL_PREFIX="$env:CONDA_PREFIX" `
+    -DPython3_EXECUTABLE="$env:CONDA_PREFIX\python.exe" `
+    -DPython3_ROOT_DIR="$env:CONDA_PREFIX" `
+    -DPython3_FIND_VIRTUALENV=ONLY
+cmake --build build --config Release --parallel
+cmake --install build --config Release
+```
+
+Windows: `venv`
+---------------
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip numpy cmake
+
+cmake -S . -B build `
+    -DCMAKE_BUILD_TYPE=Release `
+    -DCMAKE_INSTALL_PREFIX="$pwd\.venv" `
+    -DPython3_EXECUTABLE="$pwd\.venv\Scripts\python.exe" `
+    -DPython3_ROOT_DIR="$pwd\.venv" `
+    -DPython3_FIND_VIRTUALENV=ONLY
+cmake --build build --config Release --parallel
+cmake --install build --config Release
+```
+
+Running The Bundled Sample-Image Tests
+-------------------------------------
+
+The repository includes three regression tests in `test/data` that compare detector output against checked-in reference detections.
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+If you also want to install into a custom Python environment, combine the testing flag with the custom-prefix flags shown above.
 
 
 Usage
